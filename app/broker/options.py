@@ -106,8 +106,11 @@ class OptionsBroker:
 
     def _snapshots(self, symbols: list[str]) -> dict:
         from alpaca.data.requests import OptionSnapshotRequest
-        return self.options.get_option_snapshot(
-            OptionSnapshotRequest(symbol_or_symbols=symbols))
+        out = {}
+        for i in range(0, len(symbols), 100):   # endpoint caps at 100 symbols
+            out.update(self.options.get_option_snapshot(
+                OptionSnapshotRequest(symbol_or_symbols=symbols[i:i + 100])))
+        return out
 
     def _mid_of(self, snap) -> float | None:
         q = getattr(snap, "latest_quote", None)
@@ -166,8 +169,14 @@ class OptionsBroker:
             if not chain:
                 return None
             expiry = min(c.expiration_date for c in chain)
+            # shorts land within a few % of spot; keep a band wide enough for
+            # them plus their wings, instead of snapshotting the whole chain
+            band = spot * 0.05 + wing
             cands = {float(c.strike_price): c for c in chain
-                     if c.expiration_date == expiry}
+                     if c.expiration_date == expiry
+                     and abs(float(c.strike_price) - spot) <= band}
+            if not cands:
+                return None
             snaps = self._snapshots([c.symbol for c in cands.values()])
             # short strike: closest to target |delta|; fallback: ~2% OTM
             best_k, best_err = None, 9e9

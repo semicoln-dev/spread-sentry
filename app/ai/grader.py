@@ -24,6 +24,10 @@ code gates cap size and risk. Your job is judgment the code cannot provide:
 does THIS setup, in THIS market context, deserve full size, reduced size, or
 a veto?
 
+Tickets reach you UNSIZED by design: contract count is computed after your
+verdict as size_frac x the hard risk cap. Judge the setup and its per-contract
+economics, not the absence of a quantity.
+
 You cannot create trades or increase size. Reply with ONLY a JSON object:
 {"verdict": "take" | "veto",
  "size_frac": 0.0-1.0,
@@ -50,9 +54,9 @@ def grade(ticket: TradeTicket, context: dict) -> Grade:
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        payload = {"ticket": {**asdict(ticket),
-                              "ts": ticket.ts.isoformat() if ticket.ts else None},
-                   "account": context}
+        tk = {**asdict(ticket), "ts": ticket.ts.isoformat() if ticket.ts else None}
+        tk.pop("qty", None)          # sized after grading; showing 0 misleads
+        payload = {"ticket": tk, "account": context}
         msg = client.messages.create(
             model=settings.ai_model,
             max_tokens=300,
