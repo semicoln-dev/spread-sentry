@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spread Sentry</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; background: #111; color: #ddd;
+         margin: 0; padding: 20px; }
+  h1 { font-size: 20px; margin: 0 0 16px; }
+  h2 { font-size: 15px; margin: 24px 0 8px; color: #aaa; font-weight: 500; }
+  .cards { display: flex; gap: 12px; flex-wrap: wrap; }
+  .card { background: #1c1c1c; border: 1px solid #2c2c2c; border-radius: 8px;
+          padding: 12px 16px; min-width: 120px; }
+  .card .label { font-size: 12px; color: #888; }
+  .card .value { font-size: 20px; margin-top: 4px; }
+  .ok { color: #4ade80; } .bad { color: #f87171; }
+  .pos { color: #4ade80; } .neg { color: #f87171; }
+  .tablebox { border: 1px solid #333; border-radius: 8px; overflow-x: auto;
+              background: #161616; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px;
+           border-right: 1px solid #262626; border-bottom: 1px solid #262626; }
+  th:last-child, td:last-child { border-right: 0; }
+  tbody tr:last-child td { border-bottom: 0; }
+  thead th { background: #202020; color: #aaa; font-weight: 600; }
+  tbody tr:nth-child(even) td { background: #1a1a1a; }
+  .muted { color: #666; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Spread Sentry <span class="muted" id="updated"></span></h1>
+<div class="cards" id="cards"></div>
+
+<h2>Per-strategy results (closed trades)</h2>
+<div class="tablebox"><table id="analysis"><thead><tr>
+  <th>Strategy</th><th>Closed</th><th>Wins</th><th>P&amp;L $</th><th>Avg R</th><th>Total R</th>
+</tr></thead><tbody></tbody></table></div>
+
+<h2>Trades</h2>
+<div class="tablebox"><table id="trades"><thead><tr>
+  <th>Opened</th><th>Strategy</th><th>Structure</th><th>Qty</th>
+  <th>Cost</th><th>Max risk</th><th>Exit</th><th>How</th><th>P&amp;L $</th><th>R</th>
+</tr></thead><tbody></tbody></table></div>
+
+<h2>Decisions (every ticket, every verdict)</h2>
+<div class="tablebox"><table id="decisions"><thead><tr>
+  <th>Time</th><th>Strategy</th><th>Structure</th><th>Outcome</th>
+  <th>AI verdict</th><th>AI reasoning</th><th>Gates</th>
+</tr></thead><tbody></tbody></table></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const fmt = (n) => n == null ? "" : Number(n).toLocaleString(undefined, {maximumFractionDigits: 2});
+const cls = (n) => n == null ? "" : (n >= 0 ? "pos" : "neg");
+const short = (ts) => ts ? ts.replace("T", " ").slice(5, 16) : "";
+async function j(u) { const r = await fetch(u); return r.json(); }
+
+async function refresh() {
+  try {
+    const [h, a, t, d] = await Promise.all([
+      j("/health"), j("/analysis"), j("/trades"), j("/decisions")]);
+    $("#cards").innerHTML = `
+      <div class="card"><div class="label">Equity</div><div class="value">${fmt(h.equity)}</div></div>
+      <div class="card"><div class="label">Day P&L</div><div class="value ${cls(h.day_pnl)}">${fmt(h.day_pnl)}</div></div>
+      <div class="card"><div class="label">Open</div><div class="value">${h.open_trades}</div></div>
+      <div class="card"><div class="label">AI</div><div class="value">${h.ai}</div></div>
+      <div class="card"><div class="label">Executor</div><div class="value">${h.executor}</div></div>
+      <div class="card"><div class="label">Halted</div><div class="value ${h.halted ? "bad" : "ok"}">${h.halted ? "YES" : "no"}</div></div>`;
+    $("#analysis tbody").innerHTML = a.map(r => `<tr><td>${r.strategy}</td>
+      <td>${r.closed}</td><td>${r.wins}</td><td class="${cls(r.pnl_usd)}">${fmt(r.pnl_usd)}</td>
+      <td class="${cls(r.avg_r)}">${fmt(r.avg_r)}</td><td class="${cls(r.total_r)}">${fmt(r.total_r)}</td></tr>`).join("")
+      || `<tr><td colspan="6" class="muted">no closed trades yet</td></tr>`;
+    $("#trades tbody").innerHTML = t.map(x => `<tr><td>${short(x.opened_ts)}</td>
+      <td>${x.strategy}</td><td>${x.structure}</td><td>${x.qty}</td>
+      <td>${fmt(x.est_cost)}</td><td>${fmt(x.max_risk)}</td><td>${fmt(x.exit_value)}</td>
+      <td>${x.exit_how || "open"}</td><td class="${cls(x.pnl_usd)}">${fmt(x.pnl_usd)}</td>
+      <td class="${cls(x.r_multiple)}">${fmt(x.r_multiple)}</td></tr>`).join("")
+      || `<tr><td colspan="10" class="muted">no trades yet</td></tr>`;
+    $("#decisions tbody").innerHTML = d.map(x => `<tr><td>${short(x.ts)}</td>
+      <td>${x.strategy}</td><td>${x.structure}</td><td>${x.outcome}</td>
+      <td>${x.ai_verdict || ""}</td><td class="muted">${x.ai_reason || ""}</td>
+      <td class="muted">${x.gates_reason || ""}</td></tr>`).join("")
+      || `<tr><td colspan="7" class="muted">no decisions yet</td></tr>`;
+    $("#updated").textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (e) {
+    $("#updated").textContent = "refresh failed — is the server running?";
+  }
+}
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>
