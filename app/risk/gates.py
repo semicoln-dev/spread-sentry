@@ -13,17 +13,26 @@ NY = ZoneInfo("America/New_York")
 
 
 def _structure_is_defined_risk(t: TradeTicket) -> bool:
-    """Every SELL leg must be paired with a BUY leg of the same right and
-    expiry at a different strike — a long of the same right caps the payoff
-    beyond the strikes on either side (debit spread: long below the short;
-    credit spread/condor wing: long beyond it). Assumes equal ratios, which
-    holds for every structure this agent trades. No naked shorts, ever."""
-    sells = [l for l in t.legs if l.side == "sell"]
-    buys = [l for l in t.legs if l.side == "buy"]
-    return all(
-        any(b.right == s.right and b.expiry == s.expiry and b.strike != s.strike
-            for b in buys)
-        for s in sells)
+    """No naked short exposure, counted properly. Within each (right, expiry)
+    group: total BUY ratio must cover total SELL ratio (two shorts hiding
+    behind one long, or a ratio-2 short behind a ratio-1 long, are net naked
+    even though every short 'has' a long), and every SELL leg must have a
+    BUY leg at a different strike (same-strike pairs cancel, they don't cap
+    a payoff). Debit spreads and condor wings pass; anything net short in
+    any group is rejected. No naked shorts, ever."""
+    groups: dict[tuple, dict] = {}
+    for l in t.legs:
+        g = groups.setdefault((l.right, l.expiry),
+                              {"buy": 0, "sell": 0, "buys": [], "sells": []})
+        g[l.side] += l.ratio
+        g[l.side + "s"].append(l)
+    for g in groups.values():
+        if g["sell"] > g["buy"]:
+            return False
+        for s in g["sells"]:
+            if not any(b.strike != s.strike for b in g["buys"]):
+                return False
+    return True
 
 
 def check(t: TradeTicket, open_positions: int, day_pnl_usd: float,

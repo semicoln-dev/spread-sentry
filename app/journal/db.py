@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS trades (
     qty INTEGER NOT NULL, est_cost REAL NOT NULL, max_risk REAL NOT NULL,
     max_gain REAL NOT NULL, order_id TEXT,
     closed_ts TEXT, exit_value REAL, exit_how TEXT,
-    pnl_usd REAL, r_multiple REAL
+    pnl_usd REAL, r_multiple REAL, signal_ts TEXT
 );
 CREATE TABLE IF NOT EXISTS equity (
     ts TEXT PRIMARY KEY, equity REAL NOT NULL, day_pnl REAL NOT NULL
@@ -51,6 +51,15 @@ def conn():
 def init_db():
     with conn() as c:
         c.executescript(SCHEMA)
+        # migrations for journals created before the fill-truth changes:
+        # CREATE IF NOT EXISTS never adds columns to an existing table
+        tcols = {r["name"] for r in c.execute("PRAGMA table_info(trades)")}
+        for col in ("signal_ts", "close_order_id", "close_how"):
+            if col not in tcols:
+                c.execute(f"ALTER TABLE trades ADD COLUMN {col} TEXT")
+        dcols = {r["name"] for r in c.execute("PRAGMA table_info(decisions)")}
+        if "order_id" not in dcols:
+            c.execute("ALTER TABLE decisions ADD COLUMN order_id TEXT")
 
 
 def _legs_json(t: TradeTicket) -> str:
@@ -77,17 +86,74 @@ def log_decision(t: TradeTicket, grade, gates_ok: bool, gates_reason: str,
         return cur.lastrowid
 
 
-def open_trade(decision_id: int, t: TradeTicket, order_id: str) -> int:
+def open_trade(decision_id: int, t: TradeTicket, order_id: str,
+               opened_ts: str) -> int:
+    """opened_ts = the FILL wall-clock time; the signal bar's timestamp is
+    kept separately in signal_ts. est_cost/max_risk/max_gain on the ticket
+    are expected to already be fill-true (see broker.econ_from_fill) —
+    the journal records what happened, not what was estimated."""
     with conn() as c:
         cur = c.execute(
-            """INSERT INTO trades (decision_id, opened_ts, strategy, structure,
-               direction, legs, qty, est_cost, max_risk, max_gain, order_id)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            (decision_id, t.ts.isoformat() if t.ts else None, t.strategy,
-             t.structure, t.direction, _legs_json(t), t.qty,
+            """INSERT INTO trades (decision_id, opened_ts, signal_ts, strategy,
+               structure, direction, legs, qty, est_cost, max_risk, max_gain,
+               order_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (decision_id, opened_ts, t.ts.isoformat() if t.ts else None,
+             t.strategy, t.structure, t.direction, _legs_json(t), t.qty,
              t.est_cost_per_contract, t.max_risk_per_contract,
              t.max_gain_per_contract, order_id))
         return cur.lastrowid
+
+
+def update_decision_outcome(decision_id: int, outcome: str):
+    """Rows are never deleted; an outcome may sharpen once the order's fate
+    is known (submitted -> filled | entry_rejected | fill_unknown)."""
+    with conn() as c:
+        c.execute("UPDATE decisions SET outcome=? WHERE id=?",
+                  (outcome, decision_id))
+
+
+def set_decision_order(decision_id: int, order_id: str):
+    """Breadcrumb written the moment an order exists: a crash between submit
+    and fill-confirmation must leave enough in the journal for the next boot
+    to find and resolve the order (see engine.reconcile)."""
+    with conn() as c:
+        c.execute("UPDATE decisions SET order_id=? WHERE id=?",
+                  (order_id, decision_id))
+
+
+def decisions_by_outcome(outcome: str) -> list[dict]:
+    """Orders whose fate was unknown when the process died wait here for the
+    next boot to chase them (see engine.reconcile)."""
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT * FROM decisions WHERE outcome=? ORDER BY id", (outcome,))]
+
+
+def decisions_since(ts_iso: str) -> list[dict]:
+    """Today's decisions (UTC ISO ts compare) — warm-up restores each
+    strategy's daily claims (shot consumed? position filled?) from these, so
+    a restart can never re-run a judgment the day already made."""
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT * FROM decisions WHERE ts >= ? ORDER BY id", (ts_iso,))]
+
+
+def set_close_order(trade_id: int, order_id: str, how: str):
+    """A close order in flight is part of the trade's state. While
+    close_order_id is set, the engine polls THAT order instead of submitting
+    another close — re-closing an already-closed structure would open a
+    fresh reverse position."""
+    with conn() as c:
+        c.execute("UPDATE trades SET close_order_id=?, close_how=? WHERE id=?",
+                  (order_id, how, trade_id))
+
+
+def clear_close_order(trade_id: int):
+    """Only after the close order reached a DEFINITE dead state (canceled/
+    rejected) may a new close be submitted."""
+    with conn() as c:
+        c.execute("UPDATE trades SET close_order_id=NULL, close_how=NULL "
+                  "WHERE id=?", (trade_id,))
 
 
 def close_trade(trade_id: int, closed_ts: str, exit_value: float, how: str):

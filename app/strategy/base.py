@@ -57,3 +57,11 @@ class StrategyBase:
 
     def reset_day(self):
         pass
+
+    def on_ticket_outcome(self, outcome: str):
+        """Engine callback after one of this strategy's tickets is decided.
+        outcome: filled | entry_rejected | ai_veto | gate_reject |
+        unresolvable | submit_failed | skipped_conflict | warmup_replay.
+        Lets a strategy re-arm after infrastructure failures without
+        re-arming after judgment calls (a veto stays vetoed)."""
+        pass

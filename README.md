@@ -29,7 +29,7 @@ can only ever make the system more conservative.
 | | Setup | Structure |
 |---|---|---|
 | **ORB directional** | 30-min SPY opening-range breakout (ported from the live equity playbook) | ATM call/put **debit spread**, $5 wide, 2-7 DTE |
-| **Theta income** | Range day (OR width ≤ 0.6× 14-day ATR, no breakout by 11:30 ET) | 16-delta **iron condor**, $5 wings, 1-4 DTE |
+| **Theta income** | Range day (OR width ≤ 0.6× 14-day ATR, no breakout by 11:30 ET) | 16-delta **iron condor**, $5 wings, 2-4 DTE |
 
 Exits are managed continuously: 50% of max gain, 50% of max risk, or the
 15:45 ET time stop — whichever comes first. Every ticket, verdict, gate
@@ -53,11 +53,16 @@ minute bars (REST poll, no websockets — restart-proof by design)
 - **Trading API** — option chains, multi-leg (`mleg`) orders, account,
   clock; everything runs against the **paper** environment
   (`TradingClient(..., paper=True)` is hard-coded).
-- **CLI** — execution can route through the Alpaca CLI
-  (`SENTRY_EXECUTOR=cli`, see `app/broker/cli.py`); verify the command
-  templates against the CLI docs after `alpaca configure`, then flip the
-  env var. **TODO before submission: turn this on (or the MCP route
-  below) and demo it — it is a core requirement.**
+- **CLI** — the whole order lifecycle (submit, fill-poll, close) routes
+  through the **official Alpaca CLI** ([github.com/alpacahq/cli](https://github.com/alpacahq/cli))
+  with `SENTRY_EXECUTOR=cli`; see `app/broker/cli.py`. Command shapes are
+  verified against the CLI source (v0.0.13): `alpaca order submit
+  --order-class mleg --legs '<json>'` / `alpaca order get`. The CLI reads
+  the same `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` env vars as the app and
+  defaults to paper. In cli mode the app **refuses to boot** if the binary
+  is missing — no silent submit-failure nights. Install from the official
+  release binaries; note the PyPI package named `alpaca-cli` is an
+  unrelated third-party project.
 - **MCP server** *(optional upgrade)* — point the risk officer at
   `alpaca-mcp-server` so Claude pulls its own account/market context via
   tools during grading. Seam: `app/ai/grader.py` `context` dict.

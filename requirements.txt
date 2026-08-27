@@ -1,4 +1,5 @@
-fastapi>=0.110
-uvicorn[standard]>=0.29
-alpaca-py>=0.44
-anthropic>=0.40
+# exact pins = the judged week runs the versions the dev week verified
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+alpaca-py==0.44.0
+anthropic==1.0.0

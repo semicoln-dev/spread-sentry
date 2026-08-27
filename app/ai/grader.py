@@ -5,12 +5,14 @@ context and returns a verdict. Its powers are deliberately asymmetric:
     - it can SHRINK the size below the risk-gate cap
     - it can NEVER propose a trade, raise size, or touch the hard gates
 
-Fail-closed: no API key -> deterministic fallback (approve at half size);
-API error or unparseable reply -> VETO with the error journaled. An AI
-outage can only ever make the system MORE conservative.
+Fail-closed, with no exceptions: a missing API key, an API error, and an
+unparseable reply all VETO with the reason journaled. An absent risk officer
+does not approve trades — that asymmetry is the whole point of the project,
+and a misconfigured .env on a fresh VM must not quietly trade without it.
 """
 import json
 import logging
+import math
 from dataclasses import asdict, dataclass
 
 from app.config import settings
@@ -42,15 +44,34 @@ class Grade:
     model: str            # model id, "fallback", or "error"
 
 
-def _fallback(ticket: TradeTicket) -> Grade:
-    return Grade("take", 0.5, "no ANTHROPIC_API_KEY: deterministic fallback "
-                 "approves at half size", "fallback")
+def _parse_grade(text: str) -> Grade:
+    """Pure parse of the model's reply — anything malformed, non-JSON,
+    non-finite, or out of contract collapses to a veto. json.loads accepts
+    Infinity/NaN literals, so finiteness is checked explicitly: a non-finite
+    size_frac must never clamp into a full-size take."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.strip("`").removeprefix("json").strip()
+    d = json.loads(text)
+    if not isinstance(d, dict):
+        return Grade("veto", 0.0, "AI reply was not a JSON object — failing "
+                     "closed", settings.ai_model)
+    verdict = d.get("verdict", "veto")
+    if verdict not in ("take", "veto"):
+        verdict = "veto"
+    frac = float(d.get("size_frac", 0.0))
+    if not math.isfinite(frac):
+        return Grade("veto", 0.0, f"non-finite size_frac {frac!r} — failing "
+                     "closed", settings.ai_model)
+    frac = max(0.0, min(frac, settings.ai_max_size_frac))
+    return Grade(verdict, frac, str(d.get("reason", ""))[:500], settings.ai_model)
 
 
 def grade(ticket: TradeTicket, context: dict) -> Grade:
     """context: {"day_pnl_usd", "open_positions", "equity", "recent_notes"}"""
     if not settings.anthropic_api_key:
-        return _fallback(ticket)
+        return Grade("veto", 0.0, "no ANTHROPIC_API_KEY: the risk officer is "
+                     "absent, failing closed", "fallback")
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
@@ -63,15 +84,8 @@ def grade(ticket: TradeTicket, context: dict) -> Grade:
             system=SYSTEM,
             messages=[{"role": "user", "content": json.dumps(payload)}],
         )
-        text = "".join(b.text for b in msg.content if b.type == "text").strip()
-        if text.startswith("```"):
-            text = text.strip("`").removeprefix("json").strip()
-        d = json.loads(text)
-        verdict = d.get("verdict", "veto")
-        if verdict not in ("take", "veto"):
-            verdict = "veto"
-        frac = max(0.0, min(float(d.get("size_frac", 0.0)), settings.ai_max_size_frac))
-        return Grade(verdict, frac, str(d.get("reason", ""))[:500], settings.ai_model)
+        text = "".join(b.text for b in msg.content if b.type == "text")
+        return _parse_grade(text)
     except Exception as e:
         log.exception("grader failed — failing CLOSED (veto)")
         return Grade("veto", 0.0, f"AI grader error, failing closed: {e}", "error")
