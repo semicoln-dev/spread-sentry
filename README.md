@@ -85,7 +85,9 @@ Dashboard at http://localhost:8000. Tests (offline, synthetic):
 - [ ] **Fresh Alpaca paper account** created for the hackathon only,
       balance set to **$100,000** (reused accounts are disqualified);
       account ID goes in the submission form
-- [ ] `SENTRY_EXECUTOR=cli` verified working (or MCP wired) — requirement #2
+- [x] `SENTRY_EXECUTOR=cli` verified working — requirement #2 (live
+      supervised round-trip through the official CLI, Aug 28: submit,
+      fill-poll, close, flat)
 - [ ] Repo public on GitHub, MIT license (done: `LICENSE`)
 - [ ] One-page write-up (skeleton below)
 - [ ] Video + slide presentation, cover image

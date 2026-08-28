@@ -31,8 +31,8 @@ class ThetaIncome(StrategyBase):
 
     def on_ticket_outcome(self, outcome: str):
         self.pending = False
-        if outcome in ("unresolvable", "submit_failed", "entry_rejected") \
-                and self.rearms < 2:
+        if outcome in ("unresolvable", "submit_failed", "entry_rejected",
+                       "ai_error") and self.rearms < 2:
             self.rearms += 1
             self.fired = False             # infrastructure failure: re-arm
                                            # (capped: no per-bar retry loop)

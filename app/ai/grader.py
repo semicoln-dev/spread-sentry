@@ -80,10 +80,15 @@ def grade(ticket: TradeTicket, context: dict) -> Grade:
         payload = {"ticket": tk, "account": context}
         msg = client.messages.create(
             model=settings.ai_model,
-            max_tokens=300,
+            max_tokens=1024,   # 300 clipped a reply mid-JSON on Aug 28 —
+                               # a truncated verdict is an error, but a budget
+                               # that never truncates is better than a veto
             system=SYSTEM,
             messages=[{"role": "user", "content": json.dumps(payload)}],
         )
+        if msg.stop_reason == "max_tokens":
+            raise ValueError("AI reply truncated at max_tokens — refusing to "
+                             "parse a clipped verdict")
         text = "".join(b.text for b in msg.content if b.type == "text")
         return _parse_grade(text)
     except Exception as e:

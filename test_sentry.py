@@ -70,6 +70,10 @@ def test_orb_outcome_rearm():
     s.on_ticket_outcome("ai_veto")                 # judgment: shot stays spent
     assert s.fired and not s.pending and not s.blocks_theta()
     assert s.on_bar(mk(T0 + timedelta(minutes=35), 644, 645, 643, 644.5)) is None
+    s.fired = True; s.pending = True
+    s.on_ticket_outcome("ai_error")                # OUR outage, not a judgment:
+    assert not s.fired                             # re-arms (capped like infra)
+    s.fired = True
     s.on_ticket_outcome("filled")
     # (out of order on purpose: filled always latches the block)
     assert s.submitted and s.blocks_theta()
@@ -280,7 +284,10 @@ def test_feed_bars_restart_and_session_filter():
     bar_finality_s stays unseen (it may still be revised)."""
     from app import engine
     saved_finality = settings.bar_finality_s
-    settings.bar_finality_s = 0        # synthetic bars, no wall-clock coupling
+    # fully disable the finality guard for synthetic bars: depending on when
+    # the suite runs, "today 16:30 ET" can be in the FUTURE, and 0 still
+    # breaks on future bars (negative age < 0)
+    settings.bar_finality_s = -10**9
     today_930 = datetime.now(NY).replace(hour=9, minute=30, second=0, microsecond=0)
 
     def raw(ts, o, h, l, c):

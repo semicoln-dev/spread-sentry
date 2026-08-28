@@ -104,9 +104,15 @@ def handle_ticket(t: TradeTicket, day_pnl: float, equity: float):
     g = grader.grade(t, {"day_pnl_usd": day_pnl, "open_positions": len(open_rows),
                          "equity": equity})
     if g.verdict != "take":
-        db.log_decision(t, g, False, "not gate-checked (AI veto)", "ai_veto")
-        _outcome(t, "ai_veto")
-        _alert(f"⛔ VETO [{t.strategy}] {t.structure}\n{t.thesis}\nAI: {g.reason}")
+        # a veto the AI actually pronounced consumes the daily shot; a veto
+        # because the AI LAYER failed (model == "error") is fail-closed for
+        # THIS attempt but re-arms like any infrastructure failure — our
+        # outage is not the risk officer saying no
+        outcome = "ai_error" if g.model == "error" else "ai_veto"
+        db.log_decision(t, g, False, "not gate-checked (AI veto)", outcome)
+        _outcome(t, outcome)
+        _alert(f"⛔ {'AI-ERROR VETO' if outcome == 'ai_error' else 'VETO'} "
+               f"[{t.strategy}] {t.structure}\n{t.thesis}\nAI: {g.reason}")
         return
     t.qty = gates.size_for_cap(t, g.size_frac)
     ok, reason = gates.check(t, len(open_rows), day_pnl)

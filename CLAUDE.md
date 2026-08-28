@@ -96,8 +96,14 @@ lessons imported, accounts strictly separate. Owner day-trades part-time
   returns exactly the status/filled_qty/filled_avg_price fields wait_fill
   reads, and `order submit --dry-run` reproduces last night's successful
   REST body byte-for-byte. cli_available() + executor=cli startup checks
-  pass. ONLY remaining step: one supervised live fill+close in cli mode
-  (dev account) — then req #2 is fully done.
+  pass. Aug 28 22:20 MYT: supervised live round-trip DONE (dev acct,
+  1-lot 771/776 call spread, entry fill 1.78 / close 1.72, flat after) —
+  **req #2 FULLY SATISFIED**, judged week runs SENTRY_EXECUTOR=cli.
+  Same night: grader max_tokens 300 truncated a live verdict mid-JSON
+  (fail-closed veto worked, but the signal was lost) — now 1024 +
+  stop_reason guard, and grader-layer failures journal as "ai_error"
+  and re-arm (capped) instead of consuming the daily shot like a real
+  AI veto.
 - Dev paper account has orb-trader-style stock/BTC activity in its
   history (that's why equity ≠ 100k). Fine for dev; competition account
   must be freshly created and single-purpose (rule 6).

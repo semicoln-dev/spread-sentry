@@ -45,8 +45,8 @@ class OrbDirectional(StrategyBase):
         self.pending = False
         if outcome == "filled":
             self.submitted = True
-        elif outcome in ("unresolvable", "submit_failed", "entry_rejected") \
-                and self.rearms < 2:
+        elif outcome in ("unresolvable", "submit_failed", "entry_rejected",
+                         "ai_error") and self.rearms < 2:
             # infrastructure failure, not judgment: re-arm the daily shot —
             # but a PERSISTENT failure must not become an AI-call-plus-order
             # attempt on every bar, so at most 2 retries a day
