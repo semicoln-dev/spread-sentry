@@ -13,7 +13,7 @@ lessons imported, accounts strictly separate. Owner day-trades part-time
 - `app/strategy/theta_income.py` — range day (OR ≤ 0.6× 14d ATR, no ORB by 11:30 ET) → 16-delta iron condor, $5 wings
 - `app/strategy/base.py` — Bar/Leg/TradeTicket dataclasses; strategies emit TICKETS (proposals), never orders
 - `app/broker/options.py` — chain resolution (delta targeting, snapshot batching ≤100 symbols, strike band around spot), mleg orders, marks; pure econ helpers at module top (unit-tested)
-- `app/broker/cli.py` — official Alpaca CLI executor seam (`SENTRY_EXECUTOR=cli`) — hackathon requirement #2; command shapes verified against CLI source v0.0.13, binary install + live fill test pending
+- `app/broker/cli.py` — official Alpaca CLI executor seam (`SENTRY_EXECUTOR=cli`) — hackathon requirement #2 — SATISFIED: verified against CLI source v0.0.13, binary installed, supervised live round-trip done Aug 28
 - `app/ai/grader.py` — Claude risk officer (claude-sonnet-5), strict JSON verdict; tickets reach it UNSIZED by design
 - `app/risk/gates.py` — hard gates the AI cannot touch (see rules)
 - `app/engine.py` — poll loop (REST only, no websockets — restart-proof): scan → resolve → grade → gate → submit → manage exits; open positions re-adopted from journal on restart
@@ -43,16 +43,14 @@ lessons imported, accounts strictly separate. Owner day-trades part-time
 
 ## Hackathon requirements (submission = Sep 4, 23:00 MYT)
 - Fresh paper account, $100k, account ID in submission — P&L is judged
-- MUST use Alpaca MCP server or CLI (req #2) — **CODE READY, INSTALL
-  PENDING**: cli.py verified against official CLI source; install the
-  release binary + one supervised cli-mode fill test, then flip
-  SENTRY_EXECUTOR=cli for the judged week
+- MUST use Alpaca MCP server or CLI (req #2) — **DONE** (official CLI,
+  supervised live round-trip Aug 28; judged week runs SENTRY_EXECUTOR=cli)
 - Public GitHub repo (MIT — LICENSE done), one-page write-up (skeleton in
   README: AI logic / risk gates / infra), video + slides + cover image
 - Optional: ≤5 build-in-public posts on X/LinkedIn tagging @lablabai + @AlpacaHQ
 - Judged week ≈ 5 sessions (Fri 28 partial from 23:00 MYT kickoff, Mon–Thu
-  full, Fri 4 until 23:00 MYT). Agent must run 21:15–04:00 MYT nightly —
-  overnight PC or small VM: still undecided.
+  full, Fri 4 until 23:00 MYT). Agent runs 21:15–04:00 MYT nightly on the
+  Oracle Cloud VM (see "Judged week — live status").
 
 ## Status (update this as things change)
 - First overnight run (Aug 26 US session, dev acct): 1 ORB call spread
@@ -107,11 +105,35 @@ lessons imported, accounts strictly separate. Owner day-trades part-time
 - Dev paper account has orb-trader-style stock/BTC activity in its
   history (that's why equity ≠ 100k). Fine for dev; competition account
   must be freshly created and single-purpose (rule 6).
-- Repo is LOCAL ONLY — owner publishes to GitHub on submission day.
+- Repo is PUBLIC: https://github.com/semicoln-dev/spread-sentry (MIT).
 - Known quirks: options snapshot endpoint caps at 100 symbols (batched);
   grader must not see qty (sized after verdict); equity in /health is
   null until the first market-hours snapshot; journal pnl vs account
   day-pnl differ by ~$0.025/contract Alpaca paper fees.
+
+## Judged week — live status (update nightly)
+- Host: **Oracle Cloud VM 149.118.129.83** (Ubuntu 24.04, systemd unit
+  `spread-sentry`, Restart=always, timezone Asia/Kuala_Lumpur, executor=cli).
+  SSH: `ssh -i ~/.ssh/spread-sentry-vm ubuntu@149.118.129.83` (key lives on the
+  owner's Windows box + laptop). Dashboard only via tunnel `-L 8000:localhost:8000`
+  — port 8000 is NEVER exposed publicly (no auth). Kill switch:
+  `touch ~/spread-sentry/HALT`. Pull journal: `scp ubuntu@...:~/spread-sentry/journal.db .`
+  Local PC no longer runs the agent (migrated Mon Sep 1, 21:39 MYT, mid-session,
+  no state lost). **The VM's journal.db is now the authoritative one.**
+- Competition account **PA3J9Y7UA5C8**, started $100,000.
+  - Session 1 (Fri Aug 28): iron condor, AI 0.6 size, time exit, **-$114 (-0.13R)**.
+  - Session 2 (Mon Aug 31): put debit spread, AI 0.4 size, time exit, **-$200 (-0.24R)**.
+    AI's stated reason (weak follow-through) proved correct; its size cut saved
+    ~$280 vs the gate cap of 12 contracts.
+  - Running: 2 trades, **-$314**, equity ~$99,685.
+- Observation, NOT acted on: all 4 trades to date (incl. dev) exited via the
+  15:45 time stop — none reached +50% max gain or the 50% stop. Do NOT retune
+  mid-judged-week (consistency matters more than a guess); note it in the
+  write-up's "what I'd ship next".
+- Submission drafts: `WRITEUP.md` (in repo, P&L placeholder to fill Sep 4) and a
+  submission kit (video script/slides/cover/checklist) in the owner's scratchpad.
+  Deadline **Sep 4, 15:00 UTC = 23:00 MYT**. Owner overseas Sep 2-4 (holiday, can
+  submit from laptop).
 
 ## Conventions
 - Run: `venv\Scripts\Activate.ps1; uvicorn app.main:app` (dashboard :8000)
